@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import messagebox, Listbox, Scrollbar
+from tkinter import messagebox, Listbox, Scrollbar, simpledialog
 from student_management import ogrenci_ekle, ogrenci_sil
 from attendance_management import yoklama_kaydet, yoklama_durumu_getir, yoklamayi_excele_aktar
 import cv2
@@ -17,8 +17,115 @@ face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_fronta
 recognizer = cv2.face.LBPHFaceRecognizer_create()
 
 # Eğitilmiş model varsa yükle
-if model_dosyasi.exists():
-    recognizer.read(str(model_dosyasi))
+try:
+    if model_dosyasi.exists():
+        recognizer.read(str(model_dosyasi))
+except Exception as e:
+    print(f"Model yüklenemedi, yeniden eğitim gerekli: {e}")
+
+# Kamera kaynağı (varsayılan: bilgisayar kamerası)
+kamera_kaynagi = 0  # 0 = bilgisayar kamerası, URL = telefon kamerası
+
+# Kamera kaynağını al
+def kamera_ac():
+    global kamera_kaynagi
+    if isinstance(kamera_kaynagi, str) and kamera_kaynagi.startswith("http"):
+        # IP kamera (telefon)
+        video_capture = cv2.VideoCapture(kamera_kaynagi)
+    else:
+        # Bilgisayar kamerası
+        video_capture = cv2.VideoCapture(kamera_kaynagi, cv2.CAP_DSHOW)
+    return video_capture
+
+# Kamera ayarları penceresi
+def kamera_ayarlari_penceresi(root):
+    global kamera_kaynagi
+    
+    def bilgisayar_kamerasi():
+        global kamera_kaynagi
+        kamera_kaynagi = 0
+        messagebox.showinfo("Başarılı", "Bilgisayar kamerası seçildi!")
+        ayar_window.destroy()
+    
+    def telefon_kamerasi():
+        global kamera_kaynagi
+        ip = ip_entry.get().strip()
+        
+        if not ip:
+            messagebox.showerror("Hata", "Lütfen IP adresini girin!")
+            return
+        
+        # URL formatını düzenle
+        if not ip.startswith("http"):
+            ip = f"http://{ip}"
+        if not ip.endswith("/video"):
+            ip = f"{ip}/video"
+        
+        kamera_kaynagi = ip
+        messagebox.showinfo("Başarılı", f"Telefon kamerası ayarlandı!\n\nURL: {ip}")
+        ayar_window.destroy()
+    
+    def test_baglanti():
+        ip = ip_entry.get().strip()
+        if not ip:
+            messagebox.showerror("Hata", "Lütfen IP adresini girin!")
+            return
+        
+        if not ip.startswith("http"):
+            ip = f"http://{ip}"
+        if not ip.endswith("/video"):
+            ip = f"{ip}/video"
+        
+        messagebox.showinfo("Test", f"Bağlantı test ediliyor...\n{ip}")
+        
+        try:
+            cap = cv2.VideoCapture(ip)
+            ret, frame = cap.read()
+            cap.release()
+            
+            if ret:
+                messagebox.showinfo("Başarılı", "Bağlantı başarılı! Telefon kamerası çalışıyor.")
+            else:
+                messagebox.showerror("Hata", "Bağlantı başarısız! IP adresini kontrol edin.")
+        except Exception as e:
+            messagebox.showerror("Hata", f"Bağlantı hatası: {str(e)}")
+    
+    ayar_window = tk.Toplevel(root)
+    ayar_window.title("Kamera Ayarları")
+    ayar_window.geometry("400x350")
+    ayar_window.configure(bg="white")
+    
+    tk.Label(ayar_window, text="📷 Kamera Kaynağı Seçin", font=("Arial", 14, "bold"), bg="white").pack(pady=15)
+    
+    # Bilgisayar kamerası
+    tk.Button(ayar_window, text="💻 Bilgisayar Kamerası", command=bilgisayar_kamerasi, 
+              width=30, bg="#007BFF", fg="white", font=("Arial", 10)).pack(pady=10)
+    
+    tk.Label(ayar_window, text="─" * 40, bg="white", fg="gray").pack(pady=5)
+    
+    # Telefon kamerası
+    tk.Label(ayar_window, text="📱 Telefon Kamerası (IP Webcam)", font=("Arial", 12, "bold"), bg="white").pack(pady=10)
+    
+    tk.Label(ayar_window, text="Android: IP Webcam uygulamasını indirin", bg="white", fg="gray").pack()
+    tk.Label(ayar_window, text="iOS: EpocCam veya DroidCam kullanın", bg="white", fg="gray").pack()
+    
+    tk.Label(ayar_window, text="\nIP Adresi (örn: 192.168.1.5:8080):", bg="white").pack()
+    ip_entry = tk.Entry(ayar_window, width=30)
+    ip_entry.pack(pady=5)
+    ip_entry.insert(0, "192.168.1.100:8080")
+    
+    tk.Button(ayar_window, text="🔍 Bağlantıyı Test Et", command=test_baglanti, 
+              width=25, bg="#6C757D", fg="white").pack(pady=5)
+    
+    tk.Button(ayar_window, text="📱 Telefon Kamerasını Kullan", command=telefon_kamerasi, 
+              width=30, bg="#28A745", fg="white", font=("Arial", 10)).pack(pady=10)
+    
+    # Mevcut ayar
+    if isinstance(kamera_kaynagi, str):
+        mevcut = f"Telefon: {kamera_kaynagi}"
+    else:
+        mevcut = "Bilgisayar Kamerası"
+    tk.Label(ayar_window, text=f"\nMevcut: {mevcut}", bg="white", fg="blue").pack()
 
 # Öğrenci eğitim penceresi - 15 fotoğraf çekip model eğitir
 def egitim_penceresi(root):
@@ -47,10 +154,10 @@ def egitim_penceresi(root):
             ogrenci_klasoru.mkdir(parents=True, exist_ok=True)
         
         # Kamerayı aç
-        video_capture = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        video_capture = kamera_ac()
         
         if not video_capture.isOpened():
-            messagebox.showerror("Hata", "Kamera açılamadı!")
+            messagebox.showerror("Hata", "Kamera açılamadı! Kamera ayarlarını kontrol edin.")
             return
         
         # Kamera ayarları
@@ -77,7 +184,7 @@ def egitim_penceresi(root):
             for (x, y, w, h) in faces:
                 cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
                 
-                # Her 0.5 saniyede bir fotoğraf çek
+                # Her 0.3 saniyede bir fotoğraf çek
                 if foto_sayisi < toplam_foto:
                     yuz_resmi = gray[y:y+h, x:x+w]
                     yuz_resmi = cv2.resize(yuz_resmi, (200, 200))
@@ -180,10 +287,10 @@ def ekle_penceresi(root, listbox):
         foto_yolu = fotograflar_klasoru / f"{numara}.jpg"
 
         # Kameradan fotoğraf çekme
-        video_capture = cv2.VideoCapture(0, cv2.CAP_DSHOW)  # Windows için CAP_DSHOW
+        video_capture = kamera_ac()
         
         if not video_capture.isOpened():
-            messagebox.showerror("Hata", "Kamera açılamadı! Lütfen kameranızın bağlı olduğundan emin olun.")
+            messagebox.showerror("Hata", "Kamera açılamadı! Kamera ayarlarını kontrol edin.")
             ekle_window.destroy()
             return
         
@@ -250,7 +357,7 @@ def yoklama_al():
         messagebox.showwarning("Uyarı", "Henüz eğitilmiş model yok!\nÖnce 'Öğrenci Eğit' butonunu kullanarak öğrencileri eğitin.")
         return
     
-    # Modeli yeniden yükle (güncel olması için)
+    # Modeli yeniden yükle
     recognizer = cv2.face.LBPHFaceRecognizer_create()
     recognizer.read(str(model_dosyasi))
     
@@ -260,15 +367,13 @@ def yoklama_al():
         messagebox.showerror("Hata", "Label haritası bulunamadı! Öğrencileri yeniden eğitin.")
         return
     
-    video_capture = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    video_capture = kamera_ac()
     
-    # Kamera ayarlarını optimize et
     video_capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     video_capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    video_capture.set(cv2.CAP_PROP_FPS, 30)
 
     if not video_capture.isOpened():
-        messagebox.showerror("Hata", "Kamera açılamadı! Lütfen kameranızın bağlı olduğundan emin olun.")
+        messagebox.showerror("Hata", "Kamera açılamadı! Kamera ayarlarını kontrol edin.")
         return
 
     # Bugünkü tarih için yoklaması alınan öğrencileri al
@@ -278,41 +383,30 @@ def yoklama_al():
     df = pd.read_excel(ogrenci_dosyasi)
     df['ÖğrenciNumarası'] = df['ÖğrenciNumarası'].astype(str)
     
-    # İlk birkaç frame'i atla (kamera ısınma süresi)
-    for _ in range(10):
+    # İlk birkaç frame'i atla
+    for _ in range(5):
         video_capture.read()
 
     try:
-        frame_count = 0
         while True:
             ret, frame = video_capture.read()
             if not ret:
-                frame_count += 1
-                if frame_count > 10:
-                    messagebox.showerror("Hata", "Kamera bağlantısı kesildi!")
-                    break
                 continue
             
-            frame_count = 0
             gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             faces = face_cascade.detectMultiScale(gray_frame, 1.3, 5)
 
-            identified = False
-            person_name = "Bilinmiyor"
-            ogrenci_id = None
-            confidence_text = ""
-
             for (x, y, w, h) in faces:
-                # Yüz bölgesini al
                 face_roi = gray_frame[y:y+h, x:x+w]
                 face_roi = cv2.resize(face_roi, (200, 200))
                 
+                identified = False
+                person_name = "Bilinmiyor"
+                
                 try:
-                    # LBPH ile tanıma
                     label, confidence = recognizer.predict(face_roi)
                     
-                    # Güven değeri düşükse (daha iyi eşleşme) tanı
-                    if confidence < 80:  # 80'den düşük = iyi eşleşme
+                    if confidence < 80:
                         ogrenci_num = label_map.get(label, None)
                         
                         if ogrenci_num:
@@ -322,24 +416,17 @@ def yoklama_al():
                                 soyisim = ogrenci_bilgi.iloc[0]['Soyisim']
                                 identified = True
                                 person_name = f"{isim} {soyisim}"
-                                ogrenci_id = ogrenci_num
-                                confidence_text = f"Güven: {100 - confidence:.1f}%"
                                 
-                                # Eğer yoklaması alınmadıysa kaydet
-                                if ogrenci_id not in yoklama_alinanlar:
-                                    yoklama_kaydet(ogrenci_id)
-                                    yoklama_alinanlar.add(ogrenci_id)
-                except Exception as e:
+                                if ogrenci_num not in yoklama_alinanlar:
+                                    yoklama_kaydet(ogrenci_num)
+                                    yoklama_alinanlar.add(ogrenci_num)
+                except:
                     pass
                 
-                # Yüz çerçevesi çiz
                 color = (0, 255, 0) if identified else (0, 0, 255)
                 cv2.rectangle(frame, (x, y), (x+w, y+h), color, 2)
                 cv2.putText(frame, person_name, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
-                if confidence_text:
-                    cv2.putText(frame, confidence_text, (x, y+h+25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-            # Bilgi yazısı
             cv2.putText(frame, "'q' tusuna basarak cikin", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
             cv2.imshow('Kamera - Yuz Tanima', frame)
 
@@ -381,7 +468,7 @@ def yoklamayi_kaydet():
 def arayuz():
     root = tk.Tk()
     root.title("Yüz Tanıma Sistemi")
-    root.geometry("500x600")
+    root.geometry("500x700")
     root.configure(bg="black")
 
     # Listeleme kutusu
@@ -420,6 +507,8 @@ def arayuz():
               fg="black").pack(pady=5)
     tk.Button(root, text="Öğrenci Sil", command=lambda: sil_penceresi(root, listbox), width=30, bg="#DC3545",
               fg="white").pack(pady=5)
+    tk.Button(root, text="📷 Kamera Ayarları (PC/Telefon)", command=lambda: kamera_ayarlari_penceresi(root), width=30, 
+              bg="#6C757D", fg="white").pack(pady=5)
 
     # Başlangıçta listeyi güncelle
     güncellemeleri_göster(listbox)
